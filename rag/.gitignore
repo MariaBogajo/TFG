@@ -1,0 +1,13 @@
+# Entorno virtual
+.venv/
+
+# Variables de entorno
+.env
+
+# Datos
+data/
+qdrant_storage/
+
+# Python
+__pycache__/
+*.pyc

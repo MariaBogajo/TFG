@@ -1,0 +1,7 @@
+llama-index
+llama-index-vector-stores-qdrant
+qdrant-client
+python-dotenv
+pypdf
+llama-index-llms-openai
+llama-index-embeddings-openai
