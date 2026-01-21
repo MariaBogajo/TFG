@@ -4,9 +4,14 @@
 # Variables de entorno
 .env
 
-# Datos
+# Datos (ignorados)
 data/
 qdrant_storage/
+
+# Permitir la estructura de carpetas y los .gitkeep
+!data/
+!data/**/
+!data/**/.gitkeep
 
 # Python
 __pycache__/
