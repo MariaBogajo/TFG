@@ -1,4 +1,5 @@
 from dotenv import load_dotenv
+from pathlib import Path
 
 from llama_index.core import VectorStoreIndex, SimpleDirectoryReader, StorageContext
 from llama_index.core.node_parser import SentenceSplitter
@@ -15,11 +16,48 @@ COLLECTION = "rag_demo"
 QDRANT_URL = "http://localhost:6333"
 
 
+def detect_module(file_path: str) -> str:
+    """
+    Devuelve el módulo según la carpeta:
+    data/triage/*      -> triage
+    data/ap/*          -> ap
+    data/derivation/*  -> derivation
+    """
+    p = Path(file_path).as_posix()
+
+    if "/triage/" in p:
+        return "triage"
+    if "/ap/" in p:
+        return "ap"
+    if "/derivation/" in p:
+        return "derivation"
+    return "unknown"
+
+
+def file_metadata(file_path: str) -> dict:
+    """
+    Metadatos que se guardarán en Qdrant (payload) por documento/chunk.
+    """
+    p = Path(file_path).as_posix()
+    return {
+        "module": detect_module(file_path),
+        "source_path": p,  # útil para trazabilidad en el TFG
+    }
+
+
 def main():
-    # 1) Cargar PDFs
-    docs = SimpleDirectoryReader(DATA_DIR, recursive=True).load_data()
+    # 1) Cargar documentos (con metadatos por archivo)
+    docs = SimpleDirectoryReader(
+        DATA_DIR,
+        recursive=True,
+        file_metadata=file_metadata,
+    ).load_data()
+
     if not docs:
         raise RuntimeError(f"No se encontraron documentos en {DATA_DIR}")
+
+    # (Opcional) Verificación rápida de metadatos
+    print("🔎 Ejemplo metadata primer doc:", docs[0].metadata)
 
     # 2) Chunking
     splitter = SentenceSplitter(chunk_size=800, chunk_overlap=120)
