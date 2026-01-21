@@ -9,8 +9,8 @@ data/
 qdrant_storage/
 
 # Permitir la estructura de carpetas y los .gitkeep
-!data/
 !data/**/
+data/**/*
 !data/**/.gitkeep
 
 # Python
