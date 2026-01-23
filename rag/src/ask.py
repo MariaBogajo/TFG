@@ -120,6 +120,13 @@ Reglas:
 - Responde en español.
 - Devuelve "red_flags" en español.
 - MUY IMPORTANTE: el campo "priority" debe ser EXACTAMENTE uno de estos tres valores en inglés: "low", "medium" o "high".
+- NO menciones diagnósticos concretos (p. ej., infarto, embolia). Habla solo de 'condición grave' si aplica.
+- En "justification" debes referirte explícitamente a las frases de la evidencia (p. ej., 'Severe chest pain...'), o indicar "No consta en la evidencia".
+- En "justification", redacta la explicación en español, pero puedes citar literalmente frases de la evidencia aunque estén en inglés, entre comillas.
+- En "recommendation", indica el nivel de actuación según el módulo (p. ej., en triaje: "evaluación inmediata en urgencias").
+- En "recommendation", empieza con mayúscula y termina con punto.
+- Si la evidencia indica explícitamente HIGH/MEDIUM/LOW, refleja esa categoría en "justification".
+- Si la evidencia incluye una categoría explícita (HIGH/MEDIUM/LOW PRIORITY), menciónala en "justification" y hazla coherente con "priority".
 """.strip()
 
 
@@ -142,6 +149,8 @@ def log_interaction(
     retrieval_count: int,
     retrieved_sources: List[str],
     scores: List[Optional[float]],
+    max_score: Optional[float],
+    avg_score: Optional[float],
     answer_json=None,
     answer_raw=None,
 ):
@@ -155,6 +164,8 @@ def log_interaction(
         "retrieval_count": retrieval_count,
         "retrieved_sources": retrieved_sources,
         "scores": scores,
+        "max_score": max_score,
+        "avg_score": avg_score,
         "answer_text": answer_text,
         "answer_json": answer_json,
         "answer_raw": answer_raw,
@@ -230,6 +241,8 @@ def main():
     module_active = args.module
     top_k = args.top_k
 
+    MIN_SCORE = 0.35  # ajustable
+
     print("ℹ️ llama_index version:", pkg_version("llama-index"))
     print(f"ℹ️ Módulo activo: {module_active}")
     print(f"ℹ️ top_k: {top_k}")
@@ -265,19 +278,30 @@ def main():
         nodes = retriever.retrieve(q)
 
         retrieval_count = len(nodes)
-        sources_raw = []
-        scores = []
+
+        scores: List[Optional[float]] = []
+        sources_raw: List[str] = []
+
         for n in nodes:
             meta = n.node.metadata or {}
-            sources_raw.append(meta.get("source_path") or meta.get("file_name") or "unknown_source")
-            scores.append(getattr(n, "score", None))
+            sources_raw.append(
+                meta.get("source_path") or meta.get("file_name") or "unknown_source"
+            )
+            scores.append(getattr(n, "score", None))    
+
         retrieved_sources = _unique_keep_order(sources_raw)
+
+        valid_scores = [s for s in scores if s is not None]
+        max_score = max(valid_scores, default=None)
+        avg_score = (sum(valid_scores) / len(valid_scores)) if valid_scores else None
 
         print("\n=== INFO ===")
         print(f"🔎 Módulo usado: {module_active}")
         print(f"🔎 Chunks recuperados: {retrieval_count}")
+        print(f"🔎 max_score: {max_score} | avg_score: {avg_score}")
 
-        if not nodes:
+        # 1) Caso: no hay chunks
+        if retrieval_count == 0:
             msg = (
                 f"No hay evidencias en el módulo '{module_active}'.\n"
                 f"Añade documentos a data/{module_active}/ y reindexa."
@@ -292,6 +316,33 @@ def main():
                 retrieval_count=retrieval_count,
                 retrieved_sources=retrieved_sources,
                 scores=scores,
+                max_score=max_score,
+                avg_score=avg_score,
+                answer_json=None,
+                answer_raw=None,
+            )
+            print(f"\n📝 Guardado log en: {LOG_PATH.as_posix()}")
+            continue
+
+        # 2) Caso: hay chunks pero evidencia débil (threshold)
+
+        if (max_score is None) or (max_score < MIN_SCORE):
+            msg = (
+                f"No hay evidencias suficientes en el módulo '{module_active}' para responder con seguridad.\n"
+                f"Score máximo: {max_score} (umbral: {MIN_SCORE}). Ajusta el módulo o añade documentos específicos."
+            )
+            print(f"\n⚠️ {msg}")
+            log_interaction(
+                module_active,
+                q,
+                msg,
+                nodes,  # guardamos los nodos débiles para auditoría
+                top_k=top_k,
+                retrieval_count=retrieval_count,
+                retrieved_sources=retrieved_sources,
+                scores=scores,
+                max_score=max_score,
+                avg_score=avg_score,
                 answer_json=None,
                 answer_raw=None,
             )
@@ -354,6 +405,8 @@ Devuelve SOLO un JSON válido (sin texto extra) que cumpla exactamente el schema
             retrieval_count=retrieval_count,
             retrieved_sources=retrieved_sources,
             scores=scores,
+            max_score=max_score,
+            avg_score=avg_score,
             answer_json=answer_json,
             answer_raw=raw,
         )
